@@ -1,0 +1,14 @@
+body {
+    background: #0033A0;
+    color: white;
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+#radariq {
+    width: 640px;
+    height: 480px;
+}
+
+h1 {
+    text-align: center;
+}

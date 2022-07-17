@@ -1,0 +1,4 @@
+radariq
+opencv-python
+matplotlib
+pyserial
