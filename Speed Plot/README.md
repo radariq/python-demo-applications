@@ -24,8 +24,5 @@ OR:
 Simply click on the "install" batch file and it will install
 all the files required.
 
-4. Install requirements
-``pip install -r requirements.txt``
-
-5. Run the application
+4. Run the application
 ``python speed.py``
