@@ -31,6 +31,9 @@ Count the number of people who walk past the sensor
 
 ## Speed plot
 
+## Python plots
+Demonstration of how to plot RadarIQ data using Python and matplotlib.
+
 ## Speed demo
 This sample application records the speed in the X direction
 of the first detected object from the RadarIQ sensor
