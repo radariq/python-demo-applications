@@ -10,7 +10,7 @@ object within 10 meters.
 
 Note: Very accurate distance measurement is possible
 using different firmware, running specialist algorithms.
-This application is only for approixiamte mesurement using
+This application is only for approximate measurement using
 the Point Cloud data.
 
 With the module connected to the computer

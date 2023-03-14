@@ -1,10 +1,8 @@
 import os
 import logging
-import numpy as np
-from threading import Thread
 from time import time
 
-from radariq.RadarIQ import RadarIQ, MODE_POINT_CLOUD, OUTPUT_NUMPY
+from radariq.RadarIQ import RadarIQ, MODE_POINT_CLOUD, OUTPUT_LIST
 from radariq import port_manager as pm
 
 try:
@@ -16,10 +14,12 @@ except ImportError:
 
 try:
     import ttk
+
     py3 = False
 
 except ImportError:
     import tkinter.ttk as ttk
+
     py3 = True
 
 """
@@ -27,11 +27,6 @@ Example program which takes a measurement of an object using statistical methods
 """
 # Initialize Window
 window = tk.Tk()
-
-# Constants
-FRAME_RATE = 5  # frames per second
-CAPTURE_LENGTH = 5  # Number of seconds to capture for
-
 
 # Variables
 min_distance = tk.StringVar()  # Minimum distance to search and set default
@@ -48,7 +43,7 @@ max_height = tk.StringVar()  # Maximum height to search
 max_height.set("5000")
 com_port = tk.StringVar(None)  # COM PORT device is connected
 connected = False  # Connection Status of Device
-rad_iq = None
+riq = None
 cap_data = 0
 
 # Logging
@@ -62,11 +57,11 @@ def auto_detect():
     """
     Uses the port_manager app to detect the COM port of any connected RadarIQ devices.
     """
-    global rad_iq, connected, com_port
+    global riq, connected, com_port
     try:
         com_ports = pm.find_com_ports()
         connection_port = str(com_ports[0])[:4]
-        rad_iq = RadarIQ(connection_port, output_format=OUTPUT_NUMPY)
+        riq = RadarIQ(connection_port, output_format=OUTPUT_LIST)
         connected = True
         com_port.set(connection_port)
 
@@ -75,63 +70,41 @@ def auto_detect():
         return False
 
 
-def bar_and_capture():
-    """
-    Displays pop-up while measurement is taken.
-    """
-    global p_value, rad_iq
-    cap_thread = Thread(target=capture)
-    p_frame.deiconify()
-
-    # @TODO Create a helper function that updates the location of application window
-    l_progressbar.place(relx=0.5, rely=0.33, anchor=tk.CENTER)
-    l_progressbar.configure(text="Taking Readings:")
-    p_progressbar.place(relx=0.5, rely=0.66, anchor=tk.CENTER)
-    cap_thread.start()
-    p_progressbar.start(10)
-    while cap_thread.is_alive():
-        p_frame.update()
-    p_frame.withdraw()
-
-
 def calculate_distance(data):
     """
-    Processes the points data to find average and standard deviation
+    Processes the points data to find average
     """
-    average = float(np.mean(data))
-    stdev = float(np.std(data))
-    return average, stdev
+    distances = []
+    for frame in data:
+        max_point = [0, 0, 0, 0]
+        for point in frame:
+            if point[3] > max_point[3]:  # look for max intensity
+                max_point = point
+        distances.append(max_point[1]) # Y value
+    return sum(distances)/len(distances)
 
 
 def capture():
     """
     Captures distance data using RadarIQ object based on the parameters gathered from the UI.
     """
-    global rad_iq, cap_data
-    riq_obj = rad_iq
+    global riq
     try:
-        riq_obj.stop()
-        riq_obj.set_mode(MODE_POINT_CLOUD)
-        riq_obj.set_units('mm', 'mm/s')
-        riq_obj.set_frame_rate(FRAME_RATE)
-        riq_obj.set_distance_filter(float(min_distance.get()), float(max_distance.get()))
-        riq_obj.set_angle_filter(int(min_angle.get()), int(max_angle.get()))
-        riq_obj.set_height_filter(float(min_height.get()), float(max_height.get()))
-        riq_obj.start(FRAME_RATE * CAPTURE_LENGTH)
+        riq.stop()
+        riq.set_mode(MODE_POINT_CLOUD)
+        riq.set_units('mm', 'mm/s')
+        riq.set_frame_rate(20)
+        riq.set_distance_filter(float(min_distance.get()), float(max_distance.get()))
+        riq.set_angle_filter(int(min_angle.get()), int(max_angle.get()))
+        riq.set_height_filter(float(min_height.get()), float(max_height.get()))
+        riq.start(100)  # capture 100 frames then stop
 
-        all_ys = np.empty(shape=[0, 1])
-
-        for frame in riq_obj.get_data():
-            print(frame)
+        data = []
+        for frame in riq.get_data():
             if frame is not None:
+                data.append(frame)
 
-                ys = frame[:, 1]  # y's
-                print(ys)
-                all_ys = np.append(all_ys, ys)
-
-        print("Successfully captured.")
-
-        cap_data = all_ys
+        return data
 
     except Exception as error:
         print(error)
@@ -141,11 +114,11 @@ def connect_riq():
     """
     Connects program to RadarIQ device and returns a RadarIQ object.
     """
-    global rad_iq, connected, com_port
+    global riq, connected, com_port
     try:
 
         if com_port.get() != "":
-            rad_iq = RadarIQ(com_port.get())
+            riq = RadarIQ(com_port.get())
             connected = True
             return True
 
@@ -157,26 +130,23 @@ def connect_riq():
         return False
 
 
-def display_distance(average, stdev):
+def display_distance(average):
     """
-    Updates the display of distance and accuracy
+    Updates the display of distance
     """
-    round_average = round(average, 0)
-    round_stdev = round(stdev, 0)
+    round_average = round(average)
     l_display_distance.configure(text="{} mm".format(round_average))
     l_display_distance.update()
-    l_accuracy.configure(text="Accuracy: {} mm +/-".format(round_stdev))
-    l_accuracy.update()
 
 
 def measure():
-    global rad_iq
+    global riq
     if not connected:
         connect_riq()
     if connected:
-        bar_and_capture()
-        average, stdev = calculate_distance(cap_data)
-        display_distance(average, stdev)
+        data = capture()
+        distance = calculate_distance(data)
+        display_distance(distance)
 
 
 def py_ver_message(title, message, ask):
@@ -200,8 +170,8 @@ def shut_down():
     Closes the program and disconnects from the device.
     """
     if py_ver_message("Exit", "Are you sure you want to exit?", True):
-        if rad_iq is not None:
-            rad_iq.close()
+        if riq is not None:
+            riq.close()
         window.destroy()
 
 
@@ -409,7 +379,7 @@ window.configure(background="#ffffff")
 window.configure(highlightbackground="#d9d9d9")
 window.configure(highlightcolor="black")
 
-photo = tk.PhotoImage(file=os.path.relpath('assets/logo_sm.gif'))
+photo = tk.PhotoImage(file=os.path.relpath('assets/logo_sm.png'))
 window.iconbitmap(os.path.relpath("assets/favicon.ico"))
 l_logo = tk.Label(window, image=photo, background="#ffffff")
 l_logo.place(relx=0.5, rely=0.1, anchor=tk.CENTER)
@@ -430,18 +400,6 @@ l_display_distance.configure(highlightbackground="#d9d9d9")
 l_display_distance.configure(highlightcolor="black")
 l_display_distance.configure(text='''N/A''')
 l_display_distance.configure(font="none 40 bold")
-
-l_accuracy = tk.Label(measurement_frame)
-l_accuracy.place(relx=0.5, rely=0.8, anchor=tk.CENTER)
-l_accuracy.configure(activebackground="#f9f9f9")
-l_accuracy.configure(activeforeground="black")
-l_accuracy.configure(background="#ffffff")
-l_accuracy.configure(disabledforeground="#a3a3a3")
-l_accuracy.configure(foreground="#000000")
-l_accuracy.configure(highlightbackground="#d9d9d9")
-l_accuracy.configure(highlightcolor="black")
-l_accuracy.configure(text='''(Accuracy: X mm +/-)''')
-l_accuracy.configure(font="none 10 bold")
 
 # Settings Area
 l_f_settings = tk.LabelFrame(window)
@@ -541,7 +499,7 @@ e_filter_distance_max.configure(textvariable=max_distance)
 e_filter_distance_max.configure(validate="all")
 validate_distance = e_filter_distance_max.register(validate_distance_func)
 e_filter_distance_max.configure(validatecommand=(validate_distance, '%P'))
-ToolTip(e_filter_distance_max, tooltip_font,'''Must be between 0 and 10000 millimeters''', delay=0.5)
+ToolTip(e_filter_distance_max, tooltip_font, '''Must be between 0 and 10000 millimeters''', delay=0.5)
 
 l_distance_filter_units = tk.Label(l_f_settings)
 l_distance_filter_units.place(relx=0.862, rely=0.225, height=26
@@ -765,40 +723,8 @@ b_start.configure(highlightcolor="black")
 b_start.configure(pady="0")
 b_start.configure(text='''Measure''')
 
-# Progress Pop Up
-p_interval = 100 / CAPTURE_LENGTH
-p_value = 0
-
-p_frame = tk.Toplevel(window)
-p_frame_width = int(window.winfo_width()/1.5)
-p_frame_height = 100
-p_frame_x = int(window.winfo_x() + ((window.winfo_width()/2) - (p_frame_width/2)))
-p_frame_y = int(window.winfo_y() + (window.winfo_height()/2) - (p_frame_height/2))
-p_frame.geometry("{}x{}+{}+{}".format(p_frame_width, p_frame_height, p_frame_x, p_frame_y))
-p_frame.configure(background="#ffffff")
-p_frame.configure(highlightbackground="#d9d9d9")
-p_frame.configure(highlightcolor="black")
-p_frame.title("Capture")
-p_frame.iconbitmap(os.path.relpath("assets/favicon.ico"))
-
-l_progressbar = tk.Label(p_frame)
-l_progressbar.place(relx=0.5, rely=0.33, anchor=tk.CENTER)
-l_progressbar.configure(activebackground="#f9f9f9")
-l_progressbar.configure(activeforeground="black")
-l_progressbar.configure(background="#ffffff")
-l_progressbar.configure(disabledforeground="#a3a3a3")
-l_progressbar.configure(foreground="#000000")
-l_progressbar.configure(highlightbackground="#d9d9d9")
-l_progressbar.configure(highlightcolor="black")
-l_progressbar.configure(text="Taking Readings:")
-
-# @TODO Match bar coloring to rest of the app
-p_progressbar = ttk.Progressbar(p_frame)
-p_progressbar.place(relx=0.5, rely=0.66, anchor=tk.CENTER)
-
-
-p_frame.withdraw()
-
+print("Please note, this is an approximate distance only. The point cloud mode of radar is not specifically designed for accurate distance measurement.")
+print("Please review the distance products at https://radariq.io for models which are designed for distance measurment.")
 
 #################################################################
 # End GUI Config
